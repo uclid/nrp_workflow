@@ -62,13 +62,16 @@ Now that you have a basic understanding of all of the technologies described abo
 The tutorial above assumes you are working in a linux-based system and trying to deploy a “service” to your local cluster. It is a simple “Hello World!” web service. However, it is important to understand that these steps can be performed in any machine, OS or environment. You just have to learn and perform equivalent steps for your machine, OS or environment.
 
 Please pay attention to the workflow of this tutorial:
+
+```
 Step 0: Install Docker, minikube and kubectl
 Step 1: Write your program and compile the code if necessary
 Step 2: Build a docker image of the (compiled) code
 Step 3: Run the image using kubectl (it will create both a pod and deployment**)
-**kubectl run is now deprecated. See full example below for a proper process
+Note**: kubectl run is now deprecated. See full example below for a proper process
 Step 4: Expose the deployment and start the service
 Step 5: Cleanup
+```
 
 We build upon this workflow and use the example below to find a more detailed and precise workflow for our needs. Since almost all of us in our lab use CPLEX, I have used an example where a CPLEX model written in Java is run in the Nautilus cluster.
 
@@ -82,6 +85,7 @@ After that, you need to have Linux (64-bit)** version “bin” of CPLEX install
 
 Now it’s time to structure your project hierarchy. Create a main project directory, we will name it “docker” for this example. Create two directories inside it, one for the CPLEX installation and another for your source code. Conventionally, Java source directories are called “src”. So, we will have the following directory structure and files.
   
+```  
 docker
 --cplex
     cplex_studio1210.linux-x86-64.bin
@@ -92,6 +96,7 @@ docker
     cplex.jar    ---->this can be found inside your local cplex installation
 Dockerfile
 pod.yml
+```
 
 We have Dockerfile and response.properties inside “cplex” which will help us in running commands to create a cplex image. They will help bundle cplex libraries with our source code. The contents of the files are below. Please check your cplex file version to make changes as necessary.
   
@@ -139,22 +144,22 @@ RUN javac -cp cplex.jar HelloCplex.java
 ENTRYPOINT ["java","-Djava.library.path=/opt/ibm/ILOG/CPLEX_Studio1210/cplex/bin/x86-64_linux","-cp",".:/opt/ibm/ILOG/CPLEX_Studio1210/cplex/lib/cplex.jar","HelloCplex"]
 ```
 
-As you can observe, it will compile and run the java file. So, run the command to create the docker image.
+As you can observe, it will compile and run the java file. So, run the command to create the docker image.\
 `docker build -t cplex_test .`
 
 *Please note that your code must not have any errors and you must have checked that it works before creating the image.*
 
-Verify the created image
+Verify the created image\
 `docker images`
 
-Now, we need to run this image before we publish it to Docker Hub. This is to ensure it is running well in a containerized environment with all dependencies.
+Now, we need to run this image before we publish it to Docker Hub. This is to ensure it is running well in a containerized environment with all dependencies.\
 `docker run -it --rm --name cplex_test_cont cplex_test`
 
 The run should terminate with the expected results. You should be able to see the output in your terminal.
 
 When we are sure the image runs well, we can then publish it to Docker Hub. You must have a Docker Hub account before you can publish. So, go to [Docker Hub](https://hub.docker.com/) to create an account.
 
-You will need to create a repository for that particular image inside your Docker Hub namespace. Although you can have 1 free private repository, it is preferable to use a public repository unless your code or runs have any sensitive information. It simplifies later configurations. When you are ready, login to the Docker Hub from terminal, create a tag and push the image using commands below:
+You will need to create a repository for that particular image inside your Docker Hub namespace. Although you can have 1 free private repository, it is preferable to use a public repository unless your code or runs have any sensitive information. It simplifies later configurations. When you are ready, login to the Docker Hub from terminal, create a tag and push the image using commands below:\
 `docker login`
 
 `docker tag 0420d97bcc7c your_username/cplex-java-test:v1`   
@@ -168,7 +173,7 @@ Note**: *Sometimes the push takes a long time and stays stuck. You can verify if
 
 To begin working in the Nautilus cluster, check out this Quick Start guide to [Nautilus](http://ucsd-prp.gitlab.io/userdocs/start/quickstart/).
 
-You should run the following command to find your current context
+You should run the following command to find your current context\
 `kubectl config get-contexts`
 
 This will list your contexts and the current one is highlighted with an asterisk. Make sure this is “nautilus” to deploy the pod to Nautilus and not the local cluster (minikube).
@@ -193,6 +198,90 @@ spec:
 
 To describe briefly, our pod will be named “cplex-test-pod” and the corresponding enclosed container will be named “cplex-test-cont”. Our image will be pulled from the public Docker Hub image that we published earlier “your-username/cplex-java-test:v1”.
 
+We can now run this pod by using command:\
+`kubectl create -f pod.yml`
 
+And now our pod is successfully deployed. We can check this by running command:\
+`kubectl get pods`
 
+Note: *Depending on how soon you check this, the status of the pod will show if the container is being created, the pod has completed its run, or a “crash loop backoff” status. Note that if you see the crash loop backoff status, it is not actually an error. It only means the code in the pod has completed its run and Kubernetes’ tries to restart it thinking it terminated. This happens frequently if our code completes really fast (like our small example).*
 
+To see the output of our code (anything we printed in the code), we can run the following command after the run is completed or crash loop backoff status is there.\
+`kubectl logs cplex-test-pod`
+
+If the log is too long to view in the command line, you can save the log in a text file at your local working directory. Just use the command below.\
+`kubectl logs cplex-test-pod > my_log.txt`
+
+Now that you have your results, you can note them and then you should clean up by deleting your pod. This will free up the resources for your labmates and other users of Nautilus.\
+`kubectl delete pod cplex-test-pod`
+
+**Limitations of a pod**
+A limitation of the pod is that it has default computation resources assigned to it. Even if we request resources by specifying in the YAML file, it has a limit. For PRP, you may get an error message like this:
+
+```
+Error from server: error when creating "pod.yml": admission webhook "pod.nautilus.optiputer.net" denied the request: PODs without controllers are limited to 2 cores and 12 GB of RAM.
+```
+
+**Deployments**
+We need a “deployment” to request more resources. An example deployment YAML named “deploy.yml” is below:
+
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-dep
+  labels:
+    k8s-app: test-dep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: test-dep
+  template:
+    metadata: 
+      labels:
+        k8s-app: test-dep
+    spec:
+      containers:
+      - name: cplex-test-cont
+        image: your_username/cplex-java-test:v2
+        resources:
+           limits:
+             memory: "32Gi"
+             cpu: 4
+           requests:
+             memory: "16Gi"
+             cpu: 2
+```
+
+You can create and delete the deployment similar to a pod.
+```
+kubectl create -f deploy.yml
+kubectl delete deployment test-dep
+```
+
+To view the output, you can get the pod associated with the deployment using “get pods” command and get the log accordingly.
+
+And finally, verify none of your pods or deployments or services are running, if you are done using them. Take care not to bother with other pods/deployments/services in the same namespace (that you did not create).\
+`kubectl get pods/deployments/services`
+
+## Workflow Summary
+Hence, our workflow looks like below:
+
+```
+Step 0: Make sure Docker and kubectl are working\
+Step 1: Collect needed packages, write your program and compile the code if necessary
+Step 2: Test your program by running in the IDE/terminal
+    (Optional: Only needed the first time)
+Step 3: Create Dockerfile(s) with image creation details
+Step 4: Build a docker image of the (compiled) code
+Step 5: Run the image in Docker to see if it is behaving correctly
+    (Optional: Only needed the first time)
+Step 6: Publish the docker image to your Docker Hub
+    (Make the image public for easy deployment, unless you need confidentiality)
+Step 7: Switch the context to “nautilus” if not already
+Step 8: Create a pod.yml or deply.yml configuration file with necessary details
+Step 9: Apply the configuration using kubectl
+Step 10: Check the statuses and logs as needed
+Step 11: Clean up
+```
