@@ -183,7 +183,7 @@ CURRENT   NAME       CLUSTER    AUTHINFO                                      NA
 *         nautilus   nautilus   http://cilogon.org/serverA/users/<user-id>    provided-namespace
 ```
 
-Now, create a configuration file pod.yml (in the current directory) to describe how we want to deploy our image. The file looks like below:
+Now, create a configuration file **pod.yml** (in the current directory) to describe how we want to deploy our image. The file looks like below:
 
 ```
 apiVersion: v1
@@ -216,6 +216,7 @@ Now that you have your results, you can note them and then you should clean up b
 `kubectl delete pod cplex-test-pod`
 
 **Limitations of a pod**
+
 A limitation of the pod is that it has default computation resources assigned to it. Even if we request resources by specifying in the YAML file, it has a limit. For PRP, you may get an error message like this:
 
 ```
@@ -223,7 +224,8 @@ Error from server: error when creating "pod.yml": admission webhook "pod.nautilu
 ```
 
 **Deployments**
-We need a “deployment” to request more resources. An example deployment YAML named “deploy.yml” is below:
+
+We need a “deployment” to request more resources. An example deployment YAML named **deploy.yml** is below:
 
 ```
 apiVersion: apps/v1
